@@ -35,7 +35,6 @@ import (
 	"mime"
 	"net/http"
 	_ "net/http/pprof"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -471,6 +470,10 @@ func (s *Server) Run() {
 
 	staticHandler := http.FileServer(fs)
 
+	r.HandleFunc("/scripts/share.js", s.shareAssetHandler).Methods("GET")
+	r.HandleFunc("/styles/share.css", s.shareAssetHandler).Methods("GET")
+	r.HandleFunc("/view/{token}/{filename}", s.fileViewHandler).Methods("GET")
+
 	r.PathPrefix("/images/").Handler(staticHandler).Methods("GET")
 	r.PathPrefix("/styles/").Handler(staticHandler).Methods("GET")
 	r.PathPrefix("/scripts/").Handler(staticHandler).Methods("GET")
@@ -482,7 +485,7 @@ func (s *Server) Run() {
 	r.HandleFunc("/{filename:(?:favicon\\.ico|robots\\.txt|health\\.html)}", s.basicAuthHandler(http.HandlerFunc(s.putHandler))).Methods("PUT")
 
 	r.HandleFunc("/health.html", healthHandler).Methods("GET")
-	r.HandleFunc("/", s.viewHandler).Methods("GET")
+	r.HandleFunc("/", s.shareHomeHandler).Methods("GET")
 
 	r.HandleFunc("/({files:.*}).zip", s.zipHandler).Methods("GET")
 	r.HandleFunc("/({files:.*}).tar", s.tarHandler).Methods("GET")
@@ -491,25 +494,6 @@ func (s *Server) Run() {
 	r.HandleFunc("/{token}/{filename}", s.headHandler).Methods("HEAD")
 	r.HandleFunc("/{action:(?:download|get|inline)}/{token}/{filename}", s.headHandler).Methods("HEAD")
 
-	r.HandleFunc("/{token}/{filename}", s.previewHandler).MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) (match bool) {
-		// The file will show a preview page when opening the link in browser directly or
-		// from external link. If the referer url path and current path are the same it will be
-		// downloaded.
-		if !acceptsHTML(r.Header) {
-			return false
-		}
-
-		match = r.Referer() == ""
-
-		u, err := url.Parse(r.Referer())
-		if err != nil {
-			s.logger.Fatal(err)
-			return
-		}
-
-		match = match || (u.Path != r.URL.Path)
-		return
-	}).Methods("GET")
 
 	getHandlerFn := s.getHandler
 	if s.rateLimitRequests > 0 {
@@ -611,3 +595,4 @@ func (s *Server) Run() {
 
 	s.logger.Printf("Server stopped.")
 }
+

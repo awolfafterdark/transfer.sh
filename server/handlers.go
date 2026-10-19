@@ -544,6 +544,7 @@ func (s *Server) postHandler(w http.ResponseWriter, r *http.Request) {
 
 			}
 
+			s.addShareHeaders(w, r, token, filename)
 			filename = url.PathEscape(filename)
 			relativeURL, _ := url.Parse(path.Join(s.proxyPath, token, filename))
 			deleteURL, _ := url.Parse(path.Join(s.proxyPath, token, filename, metadata.DeletionToken))
@@ -573,6 +574,7 @@ func (s *Server) cleanTmpFile(f *os.File) {
 }
 
 type metadata struct {
+	UploadedAt time.Time `json:",omitempty"`
 	// ContentType is the original uploading content type
 	ContentType string
 	// ContentLength is is the original uploading content length
@@ -593,6 +595,7 @@ type metadata struct {
 
 func metadataForRequest(contentType string, contentLength int64, randomTokenLength int, r *http.Request) metadata {
 	metadata := metadata{
+		UploadedAt:    time.Now().UTC(),
 		ContentType:   strings.ToLower(contentType),
 		ContentLength: contentLength,
 		MaxDate:       time.Time{},
@@ -733,6 +736,7 @@ func (s *Server) putHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 
+	s.addShareHeaders(w, r, token, filename)
 	filename = url.PathEscape(filename)
 	relativeURL, _ := url.Parse(path.Join(s.proxyPath, token, filename))
 	deleteURL, _ := url.Parse(path.Join(s.proxyPath, token, filename, metadata.DeletionToken))
@@ -1247,7 +1251,7 @@ func (s *Server) getHandler(w http.ResponseWriter, r *http.Request) {
 
 	remainingDownloads, remainingDays := metadata.remainingLimitHeaderValues()
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, filename))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": filename}))
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Remaining-Downloads", remainingDownloads)
@@ -1269,12 +1273,17 @@ func (s *Server) getHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatUint(contentLength, 10))
 	w.Header().Set("Vary", "Range, Referer, X-Decrypt-Password")
 
-	if rng != nil && rng.ContentRange() != "" {
-		w.WriteHeader(http.StatusPartialContent)
+
+	if disposition == "inline" {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'")
+		if canContainsXSS(contentType) || strings.Contains(contentType, "svg") {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		}
 	}
 
-	if disposition == "inline" && canContainsXSS(contentType) {
-		reader = io.NopCloser(bluemonday.UGCPolicy().SanitizeReader(reader))
+	if rng != nil && rng.ContentRange() != "" {
+		w.WriteHeader(http.StatusPartialContent)
 	}
 
 	if _, err = io.Copy(w, reader); err != nil {
@@ -1396,3 +1405,4 @@ func (s *Server) basicAuthHandler(h http.Handler) http.HandlerFunc {
 		h.ServeHTTP(w, r)
 	}
 }
+
