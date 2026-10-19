@@ -1,0 +1,56 @@
+name: Upload and preview integration
+on:
+  push:
+    branches: ['main', 'feature/upload-preview']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - name: Format, vet, unit tests and build
+        run: |
+          gofmt -w server/share.go server/share_test.go server/server.go server/handlers.go
+          go vet ./...
+          go test ./...
+          go build -o "$RUNNER_TEMP/transfer" .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser tests
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser-tests" --no-audit --no-fund playwright@1.56.1
+          "$RUNNER_TEMP/browser-tests/node_modules/.bin/playwright" install --with-deps chromium
+          echo "NODE_PATH=$RUNNER_TEMP/browser-tests/node_modules" >> "$GITHUB_ENV"
+      - name: Start actual server with custom frontend
+        run: |
+          mkdir -p "$RUNNER_TEMP/transfer-data" "$RUNNER_TEMP/transfer-tmp"
+          "$RUNNER_TEMP/transfer" --provider local --basedir "$RUNNER_TEMP/transfer-data" --temp-path "$RUNNER_TEMP/transfer-tmp" --listener 127.0.0.1:8080 --web-path "$GITHUB_WORKSPACE/server/web" > "$RUNNER_TEMP/transfer.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/transfer.pid"
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8080/health.html; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/transfer.log"
+          exit 1
+      - name: API compatibility, preview safety and original download tests
+        run: python3 tests/api_test.py
+      - name: Desktop and mobile browser integration
+        run: node tests/browser.cjs
+      - name: Stop server
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/transfer.pid"; then kill "$(cat "$RUNNER_TEMP/transfer.pid")" || true; fi
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: transfer-integration-log
+          path: ${{ runner.temp }}/transfer.log
