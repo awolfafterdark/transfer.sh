@@ -61,7 +61,7 @@ jobs:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
           test -n "$NGROK_AUTHTOKEN" || { echo 'Set the NGROK_AUTHTOKEN repository secret.' >&2; exit 1; }
-          "$RUNNER_TEMP/ngrok" http --domain="$NGROK_DOMAIN" --log=stdout --log-format=json 8080 > "$RUNNER_TEMP/ngrok.log" 2>&1 &
+          "$RUNNER_TEMP/ngrok" http --url="https://$NGROK_DOMAIN" --log=stdout --log-format=json 8080 > "$RUNNER_TEMP/ngrok.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/ngrok.pid"
           for i in {1..60}; do
             if curl -fsS -H 'ngrok-skip-browser-warning: integration-test' "https://$NGROK_DOMAIN/health.html"; then exit 0; fi

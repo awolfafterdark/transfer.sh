@@ -3,15 +3,20 @@
  const $ = s => document.querySelector(s);
  const base = document.body.dataset.base || '';
  const copyStatus = $('#copy-status');
+ function fallbackCopy(text) {
+  const previous=document.activeElement;
+  const box=document.createElement('textarea');box.value=text;box.readOnly=true;box.setAttribute('aria-label','Copy link');document.body.append(box);
+  box.select();box.setSelectionRange(0,text.length);
+  try { if(!document.execCommand('copy')) throw new Error('Copy unavailable'); }
+  finally { box.remove();if(previous && previous.focus)previous.focus(); }
+ }
  async function copy(text) {
   try {
-   if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
-   else {
-    const box = document.createElement('textarea'); box.value = text; box.style.position = 'fixed'; box.style.top = '0'; document.body.append(box); box.select();
-    const ok = document.execCommand('copy'); box.remove(); if (!ok) throw new Error('Copy unavailable');
-   }
-   if (copyStatus) copyStatus.textContent = 'Link copied.';
-  } catch (_) { if (copyStatus) copyStatus.textContent = 'Copy unavailable. Select and copy the link manually.'; }
+   if(navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); } catch (_) { fallbackCopy(text); }
+   } else fallbackCopy(text);
+   if(copyStatus)copyStatus.textContent='Link copied.';
+  } catch (_) { if(copyStatus)copyStatus.textContent='Copy unavailable. Select and copy the link manually.'; }
  }
  document.addEventListener('click', e => { const button = e.target.closest('[data-copy]'); if (button) copy(button.dataset.copy); });
  // Tokenize original source once; create only text nodes and known spans. Uploaded HTML is never parsed.

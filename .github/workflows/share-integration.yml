@@ -4,6 +4,9 @@ on:
     branches: ['main', 'feature/upload-preview']
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: share-integration-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -45,6 +48,14 @@ jobs:
         run: python3 tests/api_test.py
       - name: Desktop and mobile browser integration
         run: node tests/browser.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: transfer-validation-evidence
+          path: |
+            server/share.go
+            server/share_test.go
+            tests/screenshots/
       - name: Stop server
         if: always()
         run: |
