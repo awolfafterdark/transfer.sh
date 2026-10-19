@@ -17,21 +17,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out customized fork
+        uses: actions/checkout@v4
         with:
-          path: custom
-      - name: Clone pinned official server and apply customizations
-        run: |
-          git clone https://github.com/dutchcoders/transfer.sh.git official
-          git -C official checkout --detach f040f28df9fd139e7717af7eaa4c055870ab8339
-          bash custom/scripts/apply-customizations.sh "$GITHUB_WORKSPACE/official"
+          repository: awolfafterdark/transfer.sh
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-          cache-dependency-path: official/go.sum
+          cache-dependency-path: go.sum
       - name: Build and test modified Go server
-        working-directory: official
-        run: |
+                run: |
           gofmt -w server/share.go server/share_test.go server/server.go server/handlers.go
           go vet ./...
           go test ./...
@@ -49,7 +45,7 @@ jobs:
       - name: Start server with temporary local storage
         run: |
           mkdir -p "$RUNNER_TEMP/transfer-data" "$RUNNER_TEMP/transfer-tmp"
-          "$RUNNER_TEMP/transfer" --provider local --basedir "$RUNNER_TEMP/transfer-data" --temp-path "$RUNNER_TEMP/transfer-tmp" --listener 127.0.0.1:8080 --web-path "$GITHUB_WORKSPACE/official/server/web" > "$RUNNER_TEMP/transfer.log" 2>&1 &
+          "$RUNNER_TEMP/transfer" --provider local --basedir "$RUNNER_TEMP/transfer-data" --temp-path "$RUNNER_TEMP/transfer-tmp" --listener 127.0.0.1:8080 --web-path "$GITHUB_WORKSPACE/server/web" > "$RUNNER_TEMP/transfer.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/transfer.pid"
           for i in {1..60}; do
             if curl -fsS http://127.0.0.1:8080/health.html; then exit 0; fi
@@ -70,13 +66,11 @@ jobs:
           done
           exit 1
       - name: Verify local API and complete browser upload flow
-        working-directory: custom
-        run: |
+                run: |
           python3 tests/api_test.py
           node tests/browser.cjs
       - name: Verify public tunnel and browser upload flow
-        working-directory: custom
-        env:
+                env:
           TEST_BASE_URL: https://${{ env.NGROK_DOMAIN }}
         run: |
           python3 tests/api_test.py
